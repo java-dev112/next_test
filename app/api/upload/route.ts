@@ -1,0 +1,80 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { writeFile, mkdir } from 'fs/promises';
+import { join } from 'path';
+import { existsSync } from 'fs';
+
+export async function POST(request: NextRequest) {
+  try {
+    const formData = await request.formData();
+    const file = formData.get('file') as File;
+    const fileType = formData.get('fileType') as string; // Optional: 'image' or 'file'
+
+    if (!file) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'No file provided',
+        },
+        { status: 400 }
+      );
+    }
+
+    if (fileType === 'image' && !file.type.startsWith('image/')) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'File must be an image',
+        },
+        { status: 400 }
+      );
+    }
+
+    const maxSize = fileType === 'image' ? 5 * 1024 * 1024 : 10 * 1024 * 1024; // 5MB for images, 10MB for other files
+    if (file.size > maxSize) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `File size must be less than ${fileType === 'image' ? '5MB' : '10MB'}`,
+        },
+        { status: 400 }
+      );
+    }
+
+    const uploadsDir = join(process.cwd(), 'public', 'uploads');
+    if (!existsSync(uploadsDir)) {
+      await mkdir(uploadsDir, { recursive: true });
+    }
+
+    const timestamp = Date.now();
+    const originalName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const filename = `${timestamp}-${originalName}`;
+    const filepath = join(uploadsDir, filename);
+
+    const bytes = await file.arrayBuffer();
+    const buffer = Buffer.from(bytes);
+    await writeFile(filepath, buffer);
+
+    const url = `/uploads/${filename}`;
+
+    return NextResponse.json(
+      {
+        success: true,
+        data: {
+          url,
+          filename,
+        },
+      },
+      { status: 200 }
+    );
+  } catch (error: any) {
+    console.error('Upload error:', error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: error.message || 'Failed to upload file',
+      },
+      { status: 500 }
+    );
+  }
+}
+
